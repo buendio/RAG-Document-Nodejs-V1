@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RAG — вопросы по документам</title>
+  <style>
+    :root {
+      --bg: #0c0f14;
+      --surface: #151a23;
+      --border: #2a3344;
+      --text: #e8edf4;
+      --muted: #8b9ab0;
+      --accent: #4f8cff;
+      --accent-dim: #3d6fd4;
+      --danger: #f87171;
+      --radius: 12px;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: system-ui, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+
+    .wrap {
+      max-width: 42rem;
+      margin: 0 auto;
+      padding: 2rem 1.25rem 3rem;
+    }
+
+    header {
+      margin-bottom: 2rem;
+    }
+    header h1 {
+      font-size: 1.5rem;
+      font-weight: 600;
+      margin: 0 0 0.35rem;
+      letter-spacing: -0.02em;
+    }
+    header p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.25rem 1.35rem;
+    }
+
+    label {
+      display: block;
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: var(--muted);
+      margin-bottom: 0.5rem;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 5.5rem;
+      padding: 0.75rem 0.9rem;
+      font: inherit;
+      color: var(--text);
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      resize: vertical;
+    }
+    textarea:focus {
+      outline: 2px solid var(--accent);
+      outline-offset: 1px;
+    }
+
+    .row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.6rem;
+      margin-top: 1rem;
+      align-items: center;
+    }
+
+    button {
+      font: inherit;
+      cursor: pointer;
+      border: none;
+      border-radius: 8px;
+      padding: 0.55rem 1.1rem;
+      font-weight: 500;
+    }
+    button[type="submit"] {
+      background: var(--accent);
+      color: #fff;
+    }
+    button[type="submit"]:hover:not(:disabled) {
+      background: var(--accent-dim);
+    }
+    button.secondary {
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid var(--border);
+    }
+    button.secondary:hover:not(:disabled) {
+      color: var(--text);
+      border-color: var(--muted);
+    }
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    .answer-wrap {
+      margin-top: 1.75rem;
+    }
+    .answer-wrap h2 {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin: 0 0 0.6rem;
+    }
+
+    .answer {
+      white-space: pre-wrap;
+      word-break: break-word;
+      padding: 1rem 1.1rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      min-height: 3rem;
+      font-size: 0.95rem;
+    }
+    .answer.empty {
+      color: var(--muted);
+      font-style: italic;
+    }
+
+    .error {
+      margin-top: 1rem;
+      padding: 0.75rem 1rem;
+      background: rgba(248, 113, 113, 0.08);
+      border: 1px solid rgba(248, 113, 113, 0.35);
+      border-radius: 8px;
+      color: var(--danger);
+      font-size: 0.9rem;
+    }
+
+    .loading {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+    .spinner {
+      width: 1rem;
+      height: 1rem;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    footer {
+      margin-top: 2.5rem;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Вопросы к документам</h1>
+      <p>Ответы строятся по PDF из папки MyDocs (после индексации). Нужны Ollama и Supabase.</p>
+    </header>
+
+    <form class="card" id="form" autocomplete="off">
+      <label for="q">Ваш вопрос</label>
+      <textarea id="q" placeholder="Например: о чём политика возврата?" required></textarea>
+      <div class="row">
+        <button type="submit" id="btnAsk">Получить ответ</button>
+        <button type="button" class="secondary" id="btnIndex" title="Перечитать PDF из MyDocs и записать в базу">
+          Обновить индекс PDF
+        </button>
+      </div>
+    </form>
+
+    <div class="answer-wrap" id="outBlock" hidden>
+      <h2>Ответ</h2>
+      <div class="answer empty" id="answer">—</div>
+    </div>
+
+    <div id="err" class="error" hidden></div>
+    <div id="loading" class="loading" hidden style="margin-top:1rem">
+      <span class="spinner" aria-hidden="true"></span>
+      <span id="loadingText">Идёт запрос…</span>
+    </div>
+
+    <footer>
+      API: <code style="color:var(--muted)">POST /query</code> ·
+      <a href="/api/health" style="color:var(--accent)">/api/health</a>
+    </footer>
+  </div>
+
+  <script>
+    const form = document.getElementById('form');
+    const q = document.getElementById('q');
+    const answerEl = document.getElementById('answer');
+    const outBlock = document.getElementById('outBlock');
+    const errEl = document.getElementById('err');
+    const loading = document.getElementById('loading');
+    const loadingText = document.getElementById('loadingText');
+    const btnAsk = document.getElementById('btnAsk');
+    const btnIndex = document.getElementById('btnIndex');
+
+    function setErr(msg) {
+      if (!msg) {
+        errEl.hidden = true;
+        errEl.textContent = '';
+        return;
+      }
+      errEl.hidden = false;
+      errEl.textContent = msg;
+    }
+
+    function setLoading(on, text) {
+      loading.hidden = !on;
+      if (text) loadingText.textContent = text;
+      btnAsk.disabled = on;
+      btnIndex.disabled = on;
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const query = q.value.trim();
+      if (!query) return;
+
+      setErr('');
+      outBlock.hidden = false;
+      answerEl.classList.remove('empty');
+      answerEl.textContent = '';
+      setLoading(true, 'Ищем в базе и генерируем ответ…');
+
+      try {
+        const res = await fetch('/query', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query }),
+        });
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          throw new Error([data.details, data.error].filter(Boolean).join(' — ') || 'Ошибка сервера');
+        }
+        if (typeof data.answer !== 'string') {
+          throw new Error('Некорректный ответ API');
+        }
+        answerEl.textContent = data.answer || '—';
+      } catch (err) {
+        answerEl.classList.add('empty');
+        answerEl.textContent = '—';
+        setErr(err.message || String(err));
+      } finally {
+        setLoading(false);
+      }
+    });
+
+    btnIndex.addEventListener('click', async () => {
+      if (!confirm('Переиндексировать все PDF из папки MyDocs? Это может занять время.')) return;
+
+      setErr('');
+      setLoading(true, 'Индексация PDF…');
+
+      try {
+        const res = await fetch('/index-docs', { method: 'POST' });
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          const detail = [data.details, data.hint].filter(Boolean).join(' ');
+          throw new Error(detail || data.error || 'Ошибка индексации');
+        }
+
+        const s = data.stats;
+        let msg = 'Индексация завершена.';
+        if (s) {
+          msg += '\n\nPDF найдено: ' + s.pdfFilesFound +
+            '\nПроиндексировано файлов: ' + s.pdfsIndexed +
+            '\nЧанков записано: ' + s.chunksInserted;
+          if (s.skippedNoText && s.skippedNoText.length) {
+            msg += '\nПропущено (нет текста): ' + s.skippedNoText.join(', ');
+          }
+          if (s.note) msg += '\n\n' + s.note;
+        }
+        alert(msg);
+      } catch (err) {
+        setErr(err.message || String(err));
+      } finally {
+        setLoading(false);
+      }
+    });
+  </script>
+</body>
+</html>

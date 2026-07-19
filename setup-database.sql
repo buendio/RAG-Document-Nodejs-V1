@@ -5,7 +5,10 @@ CREATE EXTENSION IF NOT EXISTS vector;
 CREATE TABLE IF NOT EXISTS public."MyPDFDocuments" (
     id BIGSERIAL PRIMARY KEY,
     content TEXT NOT NULL,
-    embedding vector(1536),  -- OpenAI text-embedding-3-small creates 1536-dimensional vectors
+    -- Размерность должна совпадать с моделью эмбеддингов Ollama (см. OLLAMA_EMBED_MODEL в .env)
+    -- nomic-embed-text → 768; mxbai-embed-large → 1024; при смене модели выполните ALTER COLUMN или пересоздайте таблицу
+    embedding vector(768),
+
     title TEXT,
     source TEXT,
     path TEXT,
@@ -20,7 +23,7 @@ WITH (lists = 100);
 
 -- Create the match_documents function for vector similarity search
 CREATE OR REPLACE FUNCTION match_documents (
-    query_embedding vector(1536),
+    query_embedding vector(768),
     match_threshold float DEFAULT 0.5,
     match_count int DEFAULT 10
 )
@@ -49,3 +52,27 @@ BEGIN
     LIMIT match_count;
 END;
 $$;
+
+-- Поиск по RPC с анонимным ключом (иначе match_documents может быть недоступна)
+GRANT EXECUTE ON FUNCTION public.match_documents TO anon, authenticated;
+
+-- Если вставки из приложения падают с «row level security», выполните блок ниже
+-- (или отключите RLS для таблицы только для разработки — не для продакшена с клиентским anon).
+
+ALTER TABLE public."MyPDFDocuments" ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "anon_rw_MyPDFDocuments" ON public."MyPDFDocuments";
+CREATE POLICY "anon_rw_MyPDFDocuments"
+ON public."MyPDFDocuments"
+FOR ALL
+TO anon
+USING (true)
+WITH CHECK (true);
+
+DROP POLICY IF EXISTS "authenticated_rw_MyPDFDocuments" ON public."MyPDFDocuments";
+CREATE POLICY "authenticated_rw_MyPDFDocuments"
+ON public."MyPDFDocuments"
+FOR ALL
+TO authenticated
+USING (true)
+WITH CHECK (true);

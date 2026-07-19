@@ -14,7 +14,6 @@ const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-
 // --- Ollama (local LLM + embeddings) ---
 // Запустите Ollama и подтяните модели, например:
 //   ollama pull nomic-embed-text
